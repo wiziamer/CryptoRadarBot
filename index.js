@@ -10,64 +10,71 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// ────────────── Start Command ──────────────
+let lastCoins = [];
+
 bot.onText(/\/start/, (msg) => {
-  const welcomeMsg = `
-👋 أهلاً ${msg.chat.first_name || 'بك'} في CryptoRadarBot!
-أنا هنا عشان أساعدك تتابع أحدث العملات والمشاريع على الشبكات الذكية.
-
-اكتب /help لعرض قائمة الأوامر.
-  `;
-  bot.sendMessage(msg.chat.id, welcomeMsg);
+  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا هنا عشان أساعدك تتابع أحدث العملات والمشاريع على الشبكات الذكية.\n\nاكتب /help لعرض قائمة الأوامر.`);
 });
 
-// ────────────── Help Command ──────────────
 bot.onText(/\/help/, (msg) => {
-  const helpMsg = `
-📌 الأوامر المتاحة:
-
-/start – تفعيل البوت
-/help – عرض هذه القائمة
-/latest – عرض أحدث العملات الجديدة
-/filter – عرض الفلاتر المفعلة حاليًا
+  const helpMessage = `
+قائمة الأوامر المتاحة:
+🆕 /latest – عرض العملات الجديدة
+🧠 /filter – عرض الفلاتر المفعلة حالياً (تم إيقاف التصفية مؤقتاً)
+📊 /stats – عرض إحصائيات عامة
   `;
-  bot.sendMessage(msg.chat.id, helpMsg);
+  bot.sendMessage(msg.chat.id, helpMessage);
 });
 
-// ────────────── Latest Command ──────────────
 bot.onText(/\/latest/, async (msg) => {
-  try {
-    // ملاحظة: لازم تربطها بقاعدة بياناتك أو API خارجي
-    const sampleData = [
-      { name: "LILPEPE", network: "Solana", link: "https://dexscreener.com/solana" },
-      { name: "MOON100X", network: "ETH", link: "https://dexscreener.com/ethereum" }
-    ];
-
-    let reply = "🚀 العملات الجديدة:\n\n";
-    sampleData.forEach((coin, index) => {
-      reply += `${index + 1}. ${coin.name} - على شبكة ${coin.network}\nرابط: ${coin.link}\n\n`;
-    });
-
-    bot.sendMessage(msg.chat.id, reply);
-  } catch (err) {
-    bot.sendMessage(msg.chat.id, "❌ فشل في جلب العملات. حاول لاحقاً.");
-  }
+  const chatId = msg.chat.id;
+  const coins = await fetchNewCoins();
+  sendCoins(chatId, coins);
 });
 
-// ────────────── Filter Command ──────────────
 bot.onText(/\/filter/, (msg) => {
-  const filters = `
-🔎 الفلاتر المفعلة حالياً:
-
-✅ السيولة فوق 5K  
-✅ عدد الهولدرز أكثر من 50  
-✅ العقد لا يحتوي على مشاكل واضحة  
-✅ تقييم AI أعلى من 80٪  
-  `;
-  bot.sendMessage(msg.chat.id, filters);
+  const msgTxt = `🔍 حالياً لا يتم تطبيق أي فلاتر.\nكل العملات الجديدة ستظهر عند إضافتها ✅`;
+  bot.sendMessage(msg.chat.id, msgTxt);
 });
 
-// ────────────── Server Listener ──────────────
+async function fetchNewCoins() {
+  try {
+    const response = await axios.get("https://api.cryptoradar.ai/new"); // افترضنا endpoint API
+    return response.data.slice(0, 5); // نعرض أول 5 عملات
+  } catch (error) {
+    console.error("Error fetching coins:", error);
+    return [];
+  }
+}
+
+function sendCoins(chatId, coins) {
+  if (!coins.length) {
+    bot.sendMessage(chatId, "🚫 لا توجد عملات جديدة حالياً.");
+    return;
+  }
+
+  let message = "🚀 العملات الجديدة:\n\n";
+
+  coins.forEach((coin, index) => {
+    message += `${index + 1}. ${coin.name} على شبكة ${coin.network}\n`;
+    message += `رابط: ${coin.link}\n`;
+    message += `📈 ماركت كاب: ${coin.marketCap} 💰\n\n`;
+  });
+
+  bot.sendMessage(chatId, message);
+}
+
+// إرسال العملات الجديدة تلقائياً كل 5 دقائق
+setInterval(async () => {
+  const coins = await fetchNewCoins();
+  const newOnes = coins.filter(c => !lastCoins.find(lc => lc.name === c.name));
+  if (newOnes.length) {
+    lastCoins = coins;
+    const adminId = process.env.ADMIN_ID;
+    if (adminId) sendCoins(adminId, newOnes);
+  }
+}, 300000); // كل 5 دقائق
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
