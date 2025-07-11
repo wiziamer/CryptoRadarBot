@@ -4,80 +4,118 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const botToken = process.env.BOT_TOKEN;
 const adminId = process.env.ADMIN_ID;
-
 const bot = new TelegramBot(botToken, { polling: true });
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+let lastCoins = [];
+let lastTopVolume = [];
+
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا جاهز أبلغك عن العملات الجديدة أول ما تنزل 🔥\n\nاكتب /help لعرض الأوامر.`);
+  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا جاهز أرسل لك العملات الجديدة على شبكة سولانا، وأعلى عملتين فوليوم 🔥`);
 });
 
 bot.onText(/\/help/, (msg) => {
-  const helpText = `
-📌 الأوامر المتاحة:
-
-🆕 /latest – عرض آخر العملات الجديدة
-📊 /stats – إحصائيات عامة (قريباً)
-🧠 /filter – عرض الفلاتر (تم تعطيل التصفية حالياً)
+  const helpMessage = `
+🆕 /latest – العملات الجديدة حالياً
+🔥 /topvolume – أعلى عملتين فوليوم الآن
+📊 /status – حالة البوت الحالية
   `;
-  bot.sendMessage(msg.chat.id, helpText);
+  bot.sendMessage(msg.chat.id, helpMessage);
 });
 
 bot.onText(/\/latest/, async (msg) => {
-  const chatId = msg.chat.id;
   const coins = await fetchNewCoins();
-  if (!coins.length) {
-    bot.sendMessage(chatId, "🚫 لا توجد عملات جديدة حالياً.");
-    return;
-  }
-  sendCoins(chatId, coins);
+  sendCoins(msg.chat.id, coins);
 });
 
-bot.onText(/\/filter/, (msg) => {
-  bot.sendMessage(msg.chat.id, `🔍 لا يتم تطبيق أي فلاتر حالياً ✅`);
+bot.onText(/\/topvolume/, async (msg) => {
+  const top = await fetchTopVolume();
+  sendTopVolume(msg.chat.id, top);
+});
+
+bot.onText(/\/status/, (msg) => {
+  bot.sendMessage(msg.chat.id, `✅ البوت يعمل الآن...\n🟡 الشبكة: سولانا فقط\n📡 التحديث كل دقيقة`);
 });
 
 async function fetchNewCoins() {
   try {
-    const res = await axios.get("https://api.dexscreener.com/latest/dex/pairs");
-    const now = Date.now();
-
-    const freshCoins = res.data.pairs.filter(pair => {
-      const createdAt = new Date(pair.pairCreatedAt).getTime();
-      return now - createdAt <= 60000; // أقل من دقيقة
-    });
-
-    return freshCoins.slice(0, 5); // خذ أول 5 عملات بس
+    const response = await axios.get("https://api.dexscreener.com/latest/dex/pairs/solana");
+    const data = response.data.pairs;
+    return data.slice(0, 5);
   } catch (err) {
-    console.error("❌ خطأ أثناء جلب العملات:", err.message);
+    console.error("fetchNewCoins error:", err);
+    return [];
+  }
+}
+
+async function fetchTopVolume() {
+  try {
+    const response = await axios.get("https://api.dexscreener.com/latest/dex/pairs/solana");
+    const data = response.data.pairs;
+    return data.sort((a, b) => b.volume.h24 - a.volume.h24).slice(0, 2);
+  } catch (err) {
+    console.error("fetchTopVolume error:", err);
     return [];
   }
 }
 
 function sendCoins(chatId, coins) {
-  let message = `🚀 عملات جديدة تم إضافتها الآن:\n\n`;
+  if (!coins.length) {
+    bot.sendMessage(chatId, "🚫 لا توجد عملات جديدة.");
+    return;
+  }
 
-  coins.forEach((pair, idx) => {
-    message += `🔸 ${idx + 1}. ${pair.baseToken.name} (${pair.baseToken.symbol})\n`;
-    message += `🟡 الشبكة: ${pair.chainId}\n`;
-    message += `📈 السعر: ${pair.priceUsd} $\n`;
-    message += `🔗 [رابط التحليل](${pair.url})\n\n`;
+  coins.forEach((coin) => {
+    const msg = `
+🚀 عملة جديدة على سولانا:
+
+🔹 الإسم: ${coin.baseToken.name} (${coin.baseToken.symbol})
+🔗 [رابط](https://dexscreener.com/solana/${coin.pairAddress})
+📈 ماركت كاب: ${coin.fdv ? `$${(coin.fdv / 1e6).toFixed(2)}M` : "غير معروف"}
+💰 السيولة: $${Math.round(coin.liquidity.usd)}
+👥 عدد المحافظ: ${coin.txns.h1 || "؟"} آخر ساعة
+`;
+    bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
   });
-
-  bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
 }
 
-// 🔁 إرسال تلقائي للعملات الجديدة كل 30 ثانية
+function sendTopVolume(chatId, coins) {
+  if (!coins.length) {
+    bot.sendMessage(chatId, "🚫 لا يوجد بيانات فوليوم.");
+    return;
+  }
+
+  let msg = "🔥 أعلى عملتين فوليوم على سولانا:\n\n";
+  coins.forEach((coin, i) => {
+    msg += `${i + 1}. ${coin.baseToken.name} (${coin.baseToken.symbol})\n`;
+    msg += `📈 فوليوم 24h: $${Math.round(coin.volume.h24)}\n`;
+    msg += `🔗 [رابط](https://dexscreener.com/solana/${coin.pairAddress})\n\n`;
+  });
+
+  bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+}
+
+// كل دقيقة فحص تلقائي
 setInterval(async () => {
   const coins = await fetchNewCoins();
-  if (coins.length && adminId) {
-    sendCoins(adminId, coins);
+  const newOnes = coins.filter(c => !lastCoins.find(l => l.pairAddress === c.pairAddress));
+  if (newOnes.length && adminId) {
+    lastCoins = coins;
+    sendCoins(adminId, newOnes);
   }
-}, 30000); // كل 30 ثانية
+
+  const top = await fetchTopVolume();
+  const changed = JSON.stringify(top) !== JSON.stringify(lastTopVolume);
+  if (changed && adminId) {
+    lastTopVolume = top;
+    sendTopVolume(adminId, top);
+  }
+}, 60000); // كل دقيقة
 
 app.listen(PORT, () => {
-  console.log(`✅ السيرفر شغّال على البورت ${PORT}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
