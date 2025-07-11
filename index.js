@@ -15,7 +15,10 @@ let lastCoins = [];
 let lastTopVolume = [];
 
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا جاهز أرسل لك العملات الجديدة على شبكة سولانا، وأعلى عملتين فوليوم 🔥`);
+  bot.sendMessage(
+    msg.chat.id,
+    `أهلاً ${msg.from.first_name}! 👋\nأنا جاهز أرسل لك العملات الجديدة على شبكة سولانا، وأعلى عملتين فوليوم 🔥`
+  );
 });
 
 bot.onText(/\/help/, (msg) => {
@@ -38,12 +41,17 @@ bot.onText(/\/topvolume/, async (msg) => {
 });
 
 bot.onText(/\/status/, (msg) => {
-  bot.sendMessage(msg.chat.id, `✅ البوت يعمل الآن...\n🟡 الشبكة: سولانا فقط\n📡 التحديث كل دقيقة`);
+  bot.sendMessage(
+    msg.chat.id,
+    `✅ البوت يعمل الآن...\n🟡 الشبكة: سولانا فقط\n📡 التحديث كل دقيقة`
+  );
 });
 
 async function fetchNewCoins() {
   try {
-    const response = await axios.get("https://api.dexscreener.com/latest/dex/pairs/solana");
+    const response = await axios.get(
+      "https://api.dexscreener.com/latest/dex/pairs/solana"
+    );
     const data = response.data.pairs;
     return data.slice(0, 5);
   } catch (err) {
@@ -54,7 +62,9 @@ async function fetchNewCoins() {
 
 async function fetchTopVolume() {
   try {
-    const response = await axios.get("https://api.dexscreener.com/latest/dex/pairs/solana");
+    const response = await axios.get(
+      "https://api.dexscreener.com/latest/dex/pairs/solana"
+    );
     const data = response.data.pairs;
     return data.sort((a, b) => b.volume.h24 - a.volume.h24).slice(0, 2);
   } catch (err) {
@@ -75,9 +85,11 @@ function sendCoins(chatId, coins) {
 
 🔹 الإسم: ${coin.baseToken.name} (${coin.baseToken.symbol})
 🔗 [رابط](https://dexscreener.com/solana/${coin.pairAddress})
-📈 ماركت كاب: ${coin.fdv ? `$${(coin.fdv / 1e6).toFixed(2)}M` : "غير معروف"}
+📈 ماركت كاب: ${
+      coin.fdv ? `$${(coin.fdv / 1e6).toFixed(2)}M` : "غير معروف"
+    }
 💰 السيولة: $${Math.round(coin.liquidity.usd)}
-👥 عدد المحافظ: ${coin.txns.h1 || "؟"} آخر ساعة
+👥 عدد المحافظ: ${coin.txns?.h1 ?? "؟"} آخر ساعة
 `;
     bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
   });
@@ -102,7 +114,9 @@ function sendTopVolume(chatId, coins) {
 // كل دقيقة فحص تلقائي
 setInterval(async () => {
   const coins = await fetchNewCoins();
-  const newOnes = coins.filter(c => !lastCoins.find(l => l.pairAddress === c.pairAddress));
+  const newOnes = coins.filter(
+    (c) => !lastCoins.find((l) => l.pairAddress === c.pairAddress)
+  );
   if (newOnes.length && adminId) {
     lastCoins = coins;
     sendCoins(adminId, newOnes);
@@ -115,6 +129,11 @@ setInterval(async () => {
     sendTopVolume(adminId, top);
   }
 }, 60000); // كل دقيقة
+
+// الصفحة الرئيسية عشان ما يعطيك 404
+app.get("/", (req, res) => {
+  res.send("✅ CryptoRadarBot is running!");
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
