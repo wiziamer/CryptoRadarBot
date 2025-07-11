@@ -3,35 +3,34 @@ const axios = require("axios");
 const TelegramBot = require("node-telegram-bot-api");
 
 const botToken = process.env.BOT_TOKEN;
-const adminId = process.env.ADMIN_ID;
-const bot = new TelegramBot(botToken, { polling: true });
+const bot = new TelegramBot(botToken);
 
+// Express App
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
+// Webhook Config
+app.post(`/bot${botToken}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+bot.setWebHook(`${process.env.BASE_URL}/bot${botToken}`);
+
 let lastCoins = [];
 
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-    `أهلاً ${msg.from.first_name} 👋\nأنا بوت المراقبة الذكي 💡 أرسل لك أحدث العملات على DEX 🚀\n\nاكتب /help لعرض الأوامر`
-  );
+  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا هنا عشان أساعدك تتابع أحدث العملات والمشاريع على الشبكات الذكية.\n\nاكتب /help لعرض قائمة الأوامر.`);
 });
 
 bot.onText(/\/help/, (msg) => {
   const helpMessage = `
-🧠 أوامر البوت:
-🆕 /latest – عرض أحدث العملات
+قائمة الأوامر المتاحة:
+🆕 /latest – عرض العملات الجديدة
+🧠 /filter – عرض الفلاتر المفعلة حالياً (تم إيقاف التصفية مؤقتاً)
 📊 /stats – عرض إحصائيات عامة
-🧪 /filter – عرض الفلاتر المفعلة
   `;
   bot.sendMessage(msg.chat.id, helpMessage);
-});
-
-bot.onText(/\/filter/, (msg) => {
-  const msgTxt = `🔍 حالياً لا يتم تطبيق فلاتر. يتم عرض كل العملات الجديدة تلقائياً ✅`;
-  bot.sendMessage(msg.chat.id, msgTxt);
 });
 
 bot.onText(/\/latest/, async (msg) => {
@@ -40,12 +39,17 @@ bot.onText(/\/latest/, async (msg) => {
   sendCoins(chatId, coins);
 });
 
+bot.onText(/\/filter/, (msg) => {
+  const msgTxt = `🔍 حالياً لا يتم تطبيق أي فلاتر.\nكل العملات الجديدة ستظهر عند إضافتها ✅`;
+  bot.sendMessage(msg.chat.id, msgTxt);
+});
+
 async function fetchNewCoins() {
   try {
-    const response = await axios.get("https://api.cryptoradar.ai/new"); // API متخيّل من المشروع
-    return response.data.slice(0, 5); // أول 5 عملات
+    const response = await axios.get("https://api.cryptoradar.ai/new");
+    return response.data.slice(0, 5);
   } catch (error) {
-    console.error("Error fetching coins:", error.message);
+    console.error("Error fetching coins:", error);
     return [];
   }
 }
@@ -56,31 +60,27 @@ function sendCoins(chatId, coins) {
     return;
   }
 
+  let message = "🚀 العملات الجديدة:\n\n";
   coins.forEach((coin, index) => {
-    let msg = `🚀 عملة جديدة رقم ${index + 1}:\n`;
-    msg += `💠 الاسم: ${coin.name}\n`;
-    msg += `🌐 الشبكة: ${coin.network}\n`;
-    msg += `📈 ماركت كاب: ${coin.marketCap}\n`;
-    msg += `💰 السيولة: ${coin.liquidity}\n`;
-    msg += `👥 عدد الهولدرز: ${coin.holders}\n`;
-    msg += `🧠 تقييم الذكاء الاصطناعي: ${coin.aiScore}/100\n`;
-    msg += `🔗 رابط العقد: ${coin.link}\n`;
-    msg += `🛒 شراء سريع: https://jup.ag/swap/SOL/${coin.address}\n`;
-
-    bot.sendMessage(chatId, msg);
+    message += `${index + 1}. ${coin.name} على شبكة ${coin.network}\n`;
+    message += `رابط: ${coin.link}\n`;
+    message += `📈 ماركت كاب: ${coin.marketCap} 💰\n\n`;
   });
+
+  bot.sendMessage(chatId, message);
 }
 
-// إرسال العملات الجديدة تلقائياً كل 5 دقائق
+// إرسال العملات الجديدة تلقائيًا كل 5 دقائق
 setInterval(async () => {
   const coins = await fetchNewCoins();
-  const newOnes = coins.filter((c) => !lastCoins.find((lc) => lc.name === c.name));
+  const newOnes = coins.filter(c => !lastCoins.find(lc => lc.name === c.name));
   if (newOnes.length) {
     lastCoins = coins;
+    const adminId = process.env.ADMIN_ID;
     if (adminId) sendCoins(adminId, newOnes);
   }
-}, 300000); // كل 5 دقائق
+}, 300000); // 5 دقائق
 
 app.listen(PORT, () => {
-  console.log(`✅ السيرفر شغال على المنفذ ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
