@@ -3,84 +3,81 @@ const axios = require("axios");
 const TelegramBot = require("node-telegram-bot-api");
 
 const botToken = process.env.BOT_TOKEN;
-const bot = new TelegramBot(botToken);
+const adminId = process.env.ADMIN_ID;
 
-// Express App
+const bot = new TelegramBot(botToken, { polling: true });
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.use(express.json());
 
-// Webhook Config
-app.post(`/bot${botToken}`, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
-bot.setWebHook(`${process.env.BASE_URL}/bot${botToken}`);
-
-let lastCoins = [];
-
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا هنا عشان أساعدك تتابع أحدث العملات والمشاريع على الشبكات الذكية.\n\nاكتب /help لعرض قائمة الأوامر.`);
+  bot.sendMessage(msg.chat.id, `أهلاً ${msg.from.first_name}! 👋\nأنا جاهز أبلغك عن العملات الجديدة أول ما تنزل 🔥\n\nاكتب /help لعرض الأوامر.`);
 });
 
 bot.onText(/\/help/, (msg) => {
-  const helpMessage = `
-قائمة الأوامر المتاحة:
-🆕 /latest – عرض العملات الجديدة
-🧠 /filter – عرض الفلاتر المفعلة حالياً (تم إيقاف التصفية مؤقتاً)
-📊 /stats – عرض إحصائيات عامة
+  const helpText = `
+📌 الأوامر المتاحة:
+
+🆕 /latest – عرض آخر العملات الجديدة
+📊 /stats – إحصائيات عامة (قريباً)
+🧠 /filter – عرض الفلاتر (تم تعطيل التصفية حالياً)
   `;
-  bot.sendMessage(msg.chat.id, helpMessage);
+  bot.sendMessage(msg.chat.id, helpText);
 });
 
 bot.onText(/\/latest/, async (msg) => {
   const chatId = msg.chat.id;
   const coins = await fetchNewCoins();
+  if (!coins.length) {
+    bot.sendMessage(chatId, "🚫 لا توجد عملات جديدة حالياً.");
+    return;
+  }
   sendCoins(chatId, coins);
 });
 
 bot.onText(/\/filter/, (msg) => {
-  const msgTxt = `🔍 حالياً لا يتم تطبيق أي فلاتر.\nكل العملات الجديدة ستظهر عند إضافتها ✅`;
-  bot.sendMessage(msg.chat.id, msgTxt);
+  bot.sendMessage(msg.chat.id, `🔍 لا يتم تطبيق أي فلاتر حالياً ✅`);
 });
 
 async function fetchNewCoins() {
   try {
-    const response = await axios.get("https://api.cryptoradar.ai/new");
-    return response.data.slice(0, 5);
-  } catch (error) {
-    console.error("Error fetching coins:", error);
+    const res = await axios.get("https://api.dexscreener.com/latest/dex/pairs");
+    const now = Date.now();
+
+    const freshCoins = res.data.pairs.filter(pair => {
+      const createdAt = new Date(pair.pairCreatedAt).getTime();
+      return now - createdAt <= 60000; // أقل من دقيقة
+    });
+
+    return freshCoins.slice(0, 5); // خذ أول 5 عملات بس
+  } catch (err) {
+    console.error("❌ خطأ أثناء جلب العملات:", err.message);
     return [];
   }
 }
 
 function sendCoins(chatId, coins) {
-  if (!coins.length) {
-    bot.sendMessage(chatId, "🚫 لا توجد عملات جديدة حالياً.");
-    return;
-  }
+  let message = `🚀 عملات جديدة تم إضافتها الآن:\n\n`;
 
-  let message = "🚀 العملات الجديدة:\n\n";
-  coins.forEach((coin, index) => {
-    message += `${index + 1}. ${coin.name} على شبكة ${coin.network}\n`;
-    message += `رابط: ${coin.link}\n`;
-    message += `📈 ماركت كاب: ${coin.marketCap} 💰\n\n`;
+  coins.forEach((pair, idx) => {
+    message += `🔸 ${idx + 1}. ${pair.baseToken.name} (${pair.baseToken.symbol})\n`;
+    message += `🟡 الشبكة: ${pair.chainId}\n`;
+    message += `📈 السعر: ${pair.priceUsd} $\n`;
+    message += `🔗 [رابط التحليل](${pair.url})\n\n`;
   });
 
-  bot.sendMessage(chatId, message);
+  bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
 }
 
-// إرسال العملات الجديدة تلقائيًا كل 5 دقائق
+// 🔁 إرسال تلقائي للعملات الجديدة كل 30 ثانية
 setInterval(async () => {
   const coins = await fetchNewCoins();
-  const newOnes = coins.filter(c => !lastCoins.find(lc => lc.name === c.name));
-  if (newOnes.length) {
-    lastCoins = coins;
-    const adminId = process.env.ADMIN_ID;
-    if (adminId) sendCoins(adminId, newOnes);
+  if (coins.length && adminId) {
+    sendCoins(adminId, coins);
   }
-}, 300000); // 5 دقائق
+}, 30000); // كل 30 ثانية
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ السيرفر شغّال على البورت ${PORT}`);
 });
